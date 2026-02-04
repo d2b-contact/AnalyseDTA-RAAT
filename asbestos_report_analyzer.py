@@ -286,46 +286,44 @@ class TextExtractor:
         return zone
     
     def extraire_zones_dangereuses(self) -> List[ZoneDangereuse]:
-    zones = []
-    # Liste de mots-clés élargie basée sur les rapports BTP réels
-    KEYWORDS_DANGER = ["amiante", "présence", "positif", "détecté", "amianté", "contient"]
-    
-    logger.info("Scan global du texte par page...")
+        """Extraction ultra-tolérante par scan de texte brut."""
+        zones = []
+        KEYWORDS_DANGER = ["amiante", "présence", "positif", "détecté", "amianté", "contient"]
+        
+        logger.info("Scan global du texte par page...")
 
-    for page_num, page in enumerate(self.pdf.pages, start=1):
-        # On extrait le texte avec l'option layout=True pour garder la cohérence visuelle
-        text = page.extract_text(layout=True)
-        if not text:
-            continue
+        for page_num, page in enumerate(self.pdf.pages, start=1):
+            # Extraction avec layout=True pour garder la structure visuelle
+            text = page.extract_text(layout=True)
+            if not text:
+                continue
 
-        lines = text.split('\n')
-        for line in lines:
-            line_lower = line.lower()
-            
-            # 1. On cherche d'abord un ID de zone (Ex: P001, Z-12, LOCAL 05)
-            # Cette regex couvre 99% des formats AC-Environnement
-            match_id = re.search(r'\b([A-Z]{1,2}[- _]?\d{1,4})\b', line)
-            
-            if match_id:
-                id_found = match_id.group(1)
+            lines = text.split('\n')
+            for line in lines:
+                line_lower = line.lower()
                 
-                # 2. Si on trouve un ID ET un mot de danger sur la MEME LIGNE
-                if any(k in line_lower for k in KEYWORDS_DANGER):
-                    zone = ZoneDangereuse(
-                        id_zone=id_found,
-                        localisation_texte=line.strip()[:120], # On capture la ligne entière
-                        materiau="Identifié par scan texte",
-                        etat="Voir rapport",
-                        page_source=page_num,
-                        risque_niveau="CRITIQUE" if "dégradé" in line_lower else "ÉLEVÉ"
-                    )
-                    zones.append(zone)
-                    logger.info(f"✓ Zone identifiée : {id_found} à la page {page_num}")
+                # Regex pour trouver l'ID (ex: P076, Z-12)
+                match_id = re.search(r'\b([A-Z]{1,2}[- _]?\d{1,4})\b', line)
+                
+                if match_id:
+                    id_found = match_id.group(1)
+                    
+                    # Si ID + mot de danger sur la même ligne
+                    if any(k in line_lower for k in KEYWORDS_DANGER):
+                        zone = ZoneDangereuse(
+                            id_zone=id_found,
+                            localisation_texte=line.strip()[:120],
+                            materiau="Identifié par scan texte",
+                            etat="Voir rapport",
+                            page_source=page_num,
+                            risque_niveau="CRITIQUE" if "dégradé" in line_lower else "ÉLEVÉ"
+                        )
+                        zones.append(zone)
+                        logger.info(f"✓ Zone identifiée : {id_found} à la page {page_num}")
 
-    # Nettoyage des doublons
-    unique_zones = {z.id_zone: z for z in zones}.values()
-    return list(unique_zones)
-
+        # Nettoyage des doublons
+        unique_zones = {z.id_zone: z for z in zones}.values()
+        return list(unique_zones)
 
 # ============================================================================
 # ÉTAPE 2 : IDENTIFICATION ET TRAITEMENT DES PLANS
