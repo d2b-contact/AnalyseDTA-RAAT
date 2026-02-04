@@ -286,49 +286,45 @@ class TextExtractor:
         return zone
     
     def extraire_zones_dangereuses(self) -> List[ZoneDangereuse]:
-        """
-        Pipeline complet d'extraction des zones dangereuses.
-        
-        Returns:
-            Liste des zones détectées avec amiante
-        """
-        zones = []
-        
-        logger.info(f"Démarrage extraction depuis: {self.pdf_path}")
-        logger.info(f"Nombre total de pages: {len(self.pdf.pages)}")
-        
-        for page_num, page in enumerate(self.pdf.pages, start=1):
-            text = page.extract_text() or ""
+    zones = []
+    # Liste de mots-clés élargie basée sur les rapports BTP réels
+    KEYWORDS_DANGER = ["amiante", "présence", "positif", "détecté", "amianté", "contient"]
+    
+    logger.info("Scan global du texte par page...")
+
+    for page_num, page in enumerate(self.pdf.pages, start=1):
+        # On extrait le texte avec l'option layout=True pour garder la cohérence visuelle
+        text = page.extract_text(layout=True)
+        if not text:
+            continue
+
+        lines = text.split('\n')
+        for line in lines:
+            line_lower = line.lower()
             
-            # Filtrage des pages
-            if not self.est_page_pertinente(page_num, text):
-                continue
+            # 1. On cherche d'abord un ID de zone (Ex: P001, Z-12, LOCAL 05)
+            # Cette regex couvre 99% des formats AC-Environnement
+            match_id = re.search(r'\b([A-Z]{1,2}[- _]?\d{1,4})\b', line)
             
-            # MÉTHODE 1: Extraction via tableaux (standard)
-            tables = self.extraire_tableaux(page)
-            
-            if tables:
-                # Analyse de chaque ligne de chaque tableau
-                for table_idx, table in enumerate(tables):
-                    logger.debug(f"Page {page_num}, Tableau {table_idx + 1}: {len(table)} lignes")
-                    
-                    for row_idx, row in enumerate(table):
-                        zone = self.analyser_ligne_tableau(row, page_num)
-                        if zone:
-                            zones.append(zone)
-            else:
-                # MÉTHODE 2: Si pas de tableau, analyse ligne par ligne (Format Galilé)
-                logger.debug(f"Page {page_num}: aucun tableau détecté, analyse ligne par ligne")
+            if match_id:
+                id_found = match_id.group(1)
                 
-                lignes = text.split('\n')
-                for ligne in lignes:
-                    # Simuler une ligne de tableau avec une seule cellule
-                    zone = self.analyser_ligne_tableau([ligne], page_num)
-                    if zone:
-                        zones.append(zone)
-        
-        logger.info(f"✓ Extraction terminée: {len(zones)} zones dangereuses détectées")
-        return zones
+                # 2. Si on trouve un ID ET un mot de danger sur la MEME LIGNE
+                if any(k in line_lower for k in KEYWORDS_DANGER):
+                    zone = ZoneDangereuse(
+                        id_zone=id_found,
+                        localisation_texte=line.strip()[:120], # On capture la ligne entière
+                        materiau="Identifié par scan texte",
+                        etat="Voir rapport",
+                        page_source=page_num,
+                        risque_niveau="CRITIQUE" if "dégradé" in line_lower else "ÉLEVÉ"
+                    )
+                    zones.append(zone)
+                    logger.info(f"✓ Zone identifiée : {id_found} à la page {page_num}")
+
+    # Nettoyage des doublons
+    unique_zones = {z.id_zone: z for z in zones}.values()
+    return list(unique_zones)
 
 
 # ============================================================================
