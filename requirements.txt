@@ -1,36 +1,7 @@
-# MVP Document Intelligence - Rapports Amiante
-# Dépendances Python pour l'analyse automatisée
-
-# === Traitement PDF ===
-pdfplumber>=0.10.0          # Extraction texte et tableaux avec précision de layout
-PyMuPDF>=1.23.0             # (fitz) Manipulation avancée, coordonnées, rendering haute-res
-pypdf>=3.17.0               # Opérations basiques PDF (fallback)
-
-# === Traitement d'Images ===
-Pillow>=10.1.0              # Manipulation images, annotations, crops
-pdf2image>=1.16.3           # Conversion PDF → images (si OCR nécessaire)
-
-# === OCR (Optionnel - pour PDFs scannés) ===
-# Décommenter si traitement de PDFs scannés requis
-# pytesseract>=0.3.10       # Interface Python pour Tesseract OCR
-# Nécessite: sudo apt-get install tesseract-ocr tesseract-ocr-fra
-
-# === Génération de Documents ===
-reportlab>=4.0.7            # Création PDF professionnels (layout, tableaux, images)
-
-# === Manipulation de Données ===
-pandas>=2.1.0               # Traitement données tabulaires (optionnel mais recommandé)
-
-# === Intégration LLM (Phase 2 - Optionnel) ===
-# Décommenter pour nettoyage de données avec IA
-# anthropic>=0.18.0         # API Claude pour structuration données ambiguës
-# openai>=1.10.0            # Alternative: API OpenAI
-
-# === Utilities ===
-python-dateutil>=2.8.2      # Gestion dates pour métadonnées
-
-# === Installation ===
-# pip install -r requirements.txt --break-system-packages
-# 
-# Note: Le flag --break-system-packages est nécessaire pour 
-# l'environnement de développement Claude.ai
+streamlit
+pdfplumber
+PyMuPDF
+Pillow
+reportlab
+pandas
+python-dateutil
