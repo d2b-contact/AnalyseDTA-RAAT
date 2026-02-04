@@ -7,7 +7,14 @@ Architecture modulaire pour extraire les zones dangereuses des rapports DTA/RAAT
 et générer des fiches réflexes avec plans annotés.
 
 Author: Lead Dev Python & IA Expert
-Version: 1.0.0 MVP
+Version: 1.1.0 MVP (Amélioré pour rapports Institut Galilé)
+
+AMÉLIORATIONS v1.1.0:
+- ✅ Support format "Prélèvement positif/négatif" (Institut Galilé)
+- ✅ Détection IDs format "(P49)" et "n°49"
+- ✅ Exclusion explicite des résultats négatifs
+- ✅ Analyse ligne par ligne si pas de tableau structuré
+- ✅ Patterns de détection élargis (20+ mots-clés)
 """
 
 import json
@@ -95,19 +102,44 @@ class TextExtractor:
     ]
     
     PATTERNS_TABLEAU_REPERAGE = [
+        # Formats standards
         r"tableau.*repérage",
         r"résultats.*analyses",
         r"zones.*échantillon",
-        r"repérage.*amiante"
+        r"repérage.*amiante",
+        
+        # Format Institut Galilé
+        r"prélèvement.*positif",
+        r"prelevement.*positif",
+        r"liste.*prélèvements",
+        r"liste.*prelevements",
+        r"résultats.*prélèvements",
+        r"resultats.*prelevements",
     ]
     
     # Mots-clés indiquant la présence d'amiante
     KEYWORDS_POSITIF = [
+        # Format Institut Galilé (PRIORITAIRE)
+        "prélèvement positif",
+        "prelevement positif",
+        
+        # Formats standards
         "présence",
+        "présence d'amiante",
         "détecté",
         "positif",
         "amiante",
-        "matériau amianté"
+        "matériau amianté",
+        "amianté",
+        
+        # Résultats de laboratoire
+        "chrysotile",
+        "amosite",
+        "crocidolite",
+        
+        # Autres variantes
+        "trace",
+        "mca",  # Matériau Contenant de l'Amiante
     ]
     
     def __init__(self, pdf_path: str):
@@ -127,11 +159,11 @@ class TextExtractor:
         Détermine si une page contient des informations pertinentes.
         
         Stratégie:
-        - Ignorer les 5 premières pages (sommaire, garde, intro)
+        - Ignorer les 3 premières pages (sommaire, garde, intro)
         - Ignorer si contient des patterns d'exclusion
         - Accepter si contient des patterns de tableau de repérage
         """
-        if page_num < 5:
+        if page_num < 3:  # Réduit de 5 à 3
             logger.debug(f"Page {page_num}: ignorée (page de garde)")
             return False
         
@@ -185,17 +217,37 @@ class TextExtractor:
         # Vérifier si c'est une détection positive
         est_positif = any(keyword in row_text for keyword in self.KEYWORDS_POSITIF)
         
-        if not est_positif:
+        # NOUVEAU: Exclure explicitement les résultats négatifs
+        est_negatif = any(keyword in row_text for keyword in [
+            "négatif", "negatif", "prélèvement négatif", "prelevement negatif",
+            "absence", "non détecté", "non detecte"
+        ])
+        
+        if not est_positif or est_negatif:
             return None
         
-        # Extraction de l'ID de zone (généralement 1ère ou 2ème colonne)
-        # Pattern: lettres suivies de chiffres, ou format LOCAL-XX
+        # Extraction de l'ID de zone
+        # NOUVEAU: Support format Institut Galilé: "002EW675245 n°49 - 1 (P49)"
         id_zone = None
-        for cell in row[:3]:
-            match = re.search(r'\b([A-Z]+[\-_]?\d+|P\d+|Z\d+|LOCAL[\-_]\d+)\b', cell, re.IGNORECASE)
+        
+        # Priorité 1: Format (PXX) - Institut Galilé
+        match = re.search(r'\(P(\d+)\)', row_text, re.IGNORECASE)
+        if match:
+            id_zone = f"P{match.group(1)}"
+        
+        # Priorité 2: Format n°XX
+        if not id_zone:
+            match = re.search(r'n[°º]\s*(\d+)', row_text, re.IGNORECASE)
             if match:
-                id_zone = match.group(1).upper()
-                break
+                id_zone = f"P{match.group(1)}"
+        
+        # Priorité 3: Formats standards (P076, Z-12, LOCAL-04, etc.)
+        if not id_zone:
+            for cell in row[:3]:
+                match = re.search(r'\b([A-Z]+[\-_]?\d+|P\d+|Z\d+|LOCAL[\-_]\d+)\b', cell, re.IGNORECASE)
+                if match:
+                    id_zone = match.group(1).upper()
+                    break
         
         if not id_zone:
             logger.debug(f"Ligne positive mais ID zone non trouvé: {row}")
@@ -252,19 +304,26 @@ class TextExtractor:
             if not self.est_page_pertinente(page_num, text):
                 continue
             
-            # Extraction des tableaux
+            # MÉTHODE 1: Extraction via tableaux (standard)
             tables = self.extraire_tableaux(page)
             
-            if not tables:
-                logger.debug(f"Page {page_num}: aucun tableau détecté")
-                continue
-            
-            # Analyse de chaque ligne de chaque tableau
-            for table_idx, table in enumerate(tables):
-                logger.debug(f"Page {page_num}, Tableau {table_idx + 1}: {len(table)} lignes")
+            if tables:
+                # Analyse de chaque ligne de chaque tableau
+                for table_idx, table in enumerate(tables):
+                    logger.debug(f"Page {page_num}, Tableau {table_idx + 1}: {len(table)} lignes")
+                    
+                    for row_idx, row in enumerate(table):
+                        zone = self.analyser_ligne_tableau(row, page_num)
+                        if zone:
+                            zones.append(zone)
+            else:
+                # MÉTHODE 2: Si pas de tableau, analyse ligne par ligne (Format Galilé)
+                logger.debug(f"Page {page_num}: aucun tableau détecté, analyse ligne par ligne")
                 
-                for row_idx, row in enumerate(table):
-                    zone = self.analyser_ligne_tableau(row, page_num)
+                lignes = text.split('\n')
+                for ligne in lignes:
+                    # Simuler une ligne de tableau avec une seule cellule
+                    zone = self.analyser_ligne_tableau([ligne], page_num)
                     if zone:
                         zones.append(zone)
         
